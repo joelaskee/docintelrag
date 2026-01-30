@@ -1,0 +1,1 @@
+"""DocIntelRAG backend application."""

@@ -1,0 +1,91 @@
+{
+  "DocumentoDiTrasporto-1.pdf": {
+    "id": "cfe21771-0102-4eee-a80c-e991c4948fb9",
+    "tenant_id": "c65aa9ae-3536-4a32-bf53-2d71d07385e9",
+    "filename": "DocumentoDiTrasporto-1.pdf",
+    "file_hash": "8eadb6a844539774176eabcd42cf811f24395d397a6dda342f288a654e6c4c9d",
+    "file_size_bytes": 115567,
+    "status": "extracted",
+    "is_scanned": true,
+    "ocr_quality": 0.7250920245398773,
+    "doc_type": "fattura",
+    "doc_type_confidence": 0.8,
+    "doc_type_override": null,
+    "raw_text": "DESTINATARIO PATELLA COMPUTER HOUSE \u00a7.N.C. di Benini Fernanda & C. via Tneste 132/134 Bisanzio Software Srl 48100 RAVENNA (RA) P.IVA 00559380399 Via Sansorino 45 Bisanzio st fax 0544 401 12 di LUOGO DI 7 S oftwa re Ere 1 ee Stee = S.N.C. di Benini Fernando & 6. 48100 RAVENNA (RA) CONTRIEUTO COHAI ASSOLTO, BAMCA DI Rimessa Diretta Vista Fattura anche in contanti GREDITO COOP,RAVENNATE E IMOLESE SCR RAVENNA AG, DARSENA AHICATO FATTURAZIONE & PRIMA NOTA \u20ac99,00 +IVA | N AMICA RINNOVO 1 ANNO \u20ac75,00 +IVA N AMICA10 IMPRESA PLUS SUITE \u20ac349,00 +IVA N AHICATO PICCOLA IMPRESA SUITE \u20ac189,00 +IVA N | SPESETRASPOATO | SPESE | SPESE Di INCASSZ 1.054,20 TRASPORTO ACURA DEL (HUMERD DOLL! PESO KO TOTALE DOGUMENTEO 5 12,00 1.265,04 VETTORE - CONDUCENTE | FIRMA DEL VETTORE C DEL | FIRMA CEL CESTIMATARIC | NETTO A PAGARE TNT - TRA.CO VIA PAG, 21 48100 RAVENNA RA \u20ac 1.265,04 Pari a Lil 2449,459 AMPIA ZIA : | acacenze 12/05/2011 - \u20ac 1.265,04",
+    "warnings": [
+      "Document appears to be scanned (minimal text layer)"
+    ],
+    "error_message": null,
+    "doc_number": "ATARIO",
+    "doc_date": "2011-05-12T00:00:00",
+    "created_at": "2026-01-29T09:47:13.488822",
+    "processed_at": "2026-01-29T09:47:15.449223",
+    "pages": [
+      {
+        "id": "2bed0d4a-0e00-49bb-8ee5-672e5e40ecc2",
+        "page_number": 1,
+        "text_content": "",
+        "ocr_confidence": null
+      }
+    ]
+  },
+  "esempio-ddt-documento-trasporto-con-prezzo.pdf": {
+    "id": "3b9fae97-c406-4388-b3ae-a72a4b3900e8",
+    "tenant_id": "c65aa9ae-3536-4a32-bf53-2d71d07385e9",
+    "filename": "esempio-ddt-documento-trasporto-con-prezzo.pdf",
+    "file_hash": "688d081ec5f594b511ceebb6bed6a2add53d0101595943d4b0daaf6f0db396b5",
+    "file_size_bytes": 42605,
+    "status": "extracted",
+    "is_scanned": true,
+    "ocr_quality": 0.6417605633802816,
+    "doc_type": "po",
+    "doc_type_confidence": 0.8,
+    "doc_type_override": null,
+    "raw_text": "Arredufficio Srl = tuo eftrio dalla progetiarione alla realirrarione ta 12 - 1008 Torino (POS - italy Tei Fac 001-548} email: it intense: it CPAP. ira et Pa: Doc. di trasporto n. 3 del 27/01/2022 Destinatario Destinazione Arnici a 4 zampe Amici a 4 zampe Via Carlo Levi, 15 Via 5. Martino a Quona, 41 50063 Figline Valdarno (FI) 50065 Pontassieve (FI) Italy Pira O2 144510720 Codice Dascrizione Quantit\u00e0 Prezzo Scanto Importo la O28 Bancone Receptions #0 cm Lines \u201cArcadia lpz e916 eo a0) n aii) Cassettiera 1 cassetti 1pr \u20ac90,16 \u20ac90,16) O45 Libreria Componibile \u201cGiada\u201d alta \u00e8 ripiani. 2 pr CGI da \u20ac 186,88) 2 \u20ac 68,54 Tat. Iva EBi.ia Tot, documenta \u20ac 449,98 incaricate del Ciumada dei trapano Pane Firms incaricato del Firma HL Cir\u00a5endita Franco =. calli Pret dagera dei beni Data a ona a Cartoni EOS DOLE 17211",
+    "warnings": [
+      "Document appears to be scanned (minimal text layer)",
+      "Could not extract fields: partita_iva"
+    ],
+    "error_message": null,
+    "doc_number": "E",
+    "doc_date": "2022-01-27T00:00:00",
+    "created_at": "2026-01-29T09:47:15.649184",
+    "processed_at": "2026-01-29T09:47:20.057251",
+    "pages": [
+      {
+        "id": "89e5e6dd-11cc-429f-b664-00c78bbcf9b5",
+        "page_number": 1,
+        "text_content": "",
+        "ocr_confidence": null
+      }
+    ]
+  },
+  "modello-fattura.pdf": {
+    "id": "46e7dcdb-89fd-4599-9049-305c92b7dbc9",
+    "tenant_id": "c65aa9ae-3536-4a32-bf53-2d71d07385e9",
+    "filename": "modello-fattura.pdf",
+    "file_hash": "cf844ffb9e8f0de63642ed706e06d8c7dc056fc02de04a350be81273a48bea7e",
+    "file_size_bytes": 188503,
+    "status": "extracted",
+    "is_scanned": false,
+    "ocr_quality": null,
+    "doc_type": "po",
+    "doc_type_confidence": 0.8,
+    "doc_type_override": null,
+    "raw_text": "Cod. articolo\nDescrizione\nQ.t\u00e0\nPrezzo uni.\nSc.\nImporto\nIva\nImponibile\nImposta IVA\nTOTALE FATTURA\nFatture facili con Danea Easyfatt, provalo gratuitamente su www.danea.it\nFattura nr. \ndel \nCliente \n \n \n \n \n \n \n \nP. IVA / Cod. Fiscale \nModalit\u00e0 di pagamento \nSesa spa\nvia Piovola 138, 50053, Empoli (FI)\n24311\n23/11/2025\nA321\nPc Desktop Dell Xeon 32gb ram\nGpu Nvidia GTX5090\nG563\n2\n1\n2000\n1500\n10%\n10%\n1800\n2700\n4500\n990\n5490",
+    "warnings": [],
+    "error_message": null,
+    "doc_number": "E",
+    "doc_date": "2025-11-23T00:00:00",
+    "created_at": "2026-01-29T09:47:21.695743",
+    "processed_at": "2026-01-29T09:47:25.449292",
+    "pages": [
+      {
+        "id": "7a164f0a-4250-4742-9ef6-9ec0f93b529d",
+        "page_number": 1,
+        "text_content": "Cod. articolo\nDescrizione\nQ.t\u00e0\nPrezzo uni.\nSc.\nImporto\nIva\nImponibile\nImposta IVA\nTOTALE FATTURA\nFatture facili con Danea Easyfatt, provalo gratuitamente su www.danea.it\nFattura nr. \ndel \nCliente \n \n \n \n \n \n \n \nP. IVA / Cod. Fiscale \nModalit\u00e0 di pagamento \nSesa spa\nvia Piovola 138, 50053, Empoli (FI)\n24311\n23/11/2025\nA321\nPc Desktop Dell Xeon 32gb ram\nGpu Nvidia GTX5090\nG563\n2\n1\n2000\n1500\n10%\n10%\n1800\n2700\n4500\n990\n5490",
+        "ocr_confidence": null
+      }
+    ]
+  }
+}
