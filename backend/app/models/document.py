@@ -23,6 +23,7 @@ class DocumentStatus(str, Enum):
     """Document processing status."""
     QUEUED = "queued"
     PROCESSING = "processing"
+    NEEDS_ROTATION = "needs_rotation"  # Paused for manual rotation
     EXTRACTED = "extracted"
     VALIDATED = "validated"
     FAILED = "failed"
@@ -100,6 +101,7 @@ class DocumentPage(Base):
     page_number = Column(Integer, nullable=False)
     text_content = Column(Text, nullable=True)
     ocr_confidence = Column(Float, nullable=True)
+    rotation_angle = Column(Integer, nullable=False, default=0)  # 0, 90, 180, 270
     
     # Relationships
     document = relationship("Document", back_populates="pages")

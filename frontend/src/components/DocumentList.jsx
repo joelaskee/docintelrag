@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { documentsApi } from '../services/api';
+import RotationModal from './RotationModal';
 import {
     FileText,
     MoreVertical,
@@ -13,13 +14,17 @@ import {
     X,
     Eye,
     Download,
-    Trash2
+    Trash2,
+    RotateCw,
+    RefreshCw,
+    StopCircle
 } from 'lucide-react';
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, onClick }) => {
     const styles = {
         queued: 'badge-info',
         processing: 'badge-info',
+        needs_rotation: 'badge-warning',
         extracted: 'badge-success',
         validated: 'badge-success',
         failed: 'badge-error',
@@ -28,15 +33,26 @@ const StatusBadge = ({ status }) => {
     const icons = {
         queued: <Clock className="w-3 h-3" />,
         processing: <Loader2 className="w-3 h-3 animate-spin" />,
+        needs_rotation: <RotateCw className="w-3 h-3" />,
         extracted: <FileText className="w-3 h-3" />,
         validated: <CheckCircle className="w-3 h-3" />,
         failed: <AlertTriangle className="w-3 h-3" />,
     };
 
+    const labels = {
+        needs_rotation: 'Richiede Rotazione'
+    };
+
+    const isClickable = status === 'needs_rotation';
+
     return (
-        <span className={`badge ${styles[status] || 'badge-info'}`}>
+        <span
+            className={`badge ${styles[status] || 'badge-info'} ${isClickable ? 'badge-clickable' : ''}`}
+            onClick={isClickable ? onClick : undefined}
+            style={isClickable ? { cursor: 'pointer' } : {}}
+        >
             {icons[status]}
-            <span style={{ marginLeft: 4 }}>{status}</span>
+            <span style={{ marginLeft: 4 }}>{labels[status] || status}</span>
         </span>
     );
 };
@@ -50,6 +66,7 @@ const DocumentList = () => {
     const [filterType, setFilterType] = useState('');
     const [showFilter, setShowFilter] = useState(false);
     const [activeMenu, setActiveMenu] = useState(null);
+    const [rotationDoc, setRotationDoc] = useState(null);
 
     const fetchDocuments = async () => {
         try {
@@ -249,7 +266,10 @@ const DocumentList = () => {
                                         </div>
                                     </td>
                                     <td style={{ padding: 'var(--spacing-md)' }}>
-                                        <StatusBadge status={doc.status} />
+                                        <StatusBadge
+                                            status={doc.status}
+                                            onClick={() => doc.status === 'needs_rotation' && setRotationDoc(doc)}
+                                        />
                                     </td>
                                     <td style={{ padding: 'var(--spacing-md)' }}>
                                         {doc.doc_type ? (
@@ -354,6 +374,89 @@ const DocumentList = () => {
                                                     <Download size={16} />
                                                     Scarica PDF
                                                 </a>
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            await documentsApi.reprocess(doc.id);
+                                                            fetchDocuments();
+                                                        } catch (err) {
+                                                            console.error('Reprocess error:', err);
+                                                            alert('Errore durante il riprocessamento');
+                                                        }
+                                                        setActiveMenu(null);
+                                                    }}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 'var(--spacing-sm)',
+                                                        padding: 'var(--spacing-sm) var(--spacing-md)',
+                                                        color: 'var(--color-accent)',
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        width: '100%',
+                                                        cursor: 'pointer',
+                                                        textAlign: 'left'
+                                                    }}
+                                                >
+                                                    <RefreshCw size={16} />
+                                                    Riprocessa
+                                                </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            await documentsApi.stopProcessing(doc.id);
+                                                            fetchDocuments();
+                                                        } catch (err) {
+                                                            console.error('Stop error:', err);
+                                                            alert('Errore durante lo stop');
+                                                        }
+                                                        setActiveMenu(null);
+                                                    }}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 'var(--spacing-sm)',
+                                                        padding: 'var(--spacing-sm) var(--spacing-md)',
+                                                        color: 'var(--color-warning)',
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        width: '100%',
+                                                        cursor: 'pointer',
+                                                        textAlign: 'left'
+                                                    }}
+                                                >
+                                                    <StopCircle size={16} />
+                                                    Stoppa
+                                                </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (window.confirm(`Eliminare "${doc.filename}"?`)) {
+                                                            try {
+                                                                await documentsApi.delete(doc.id);
+                                                                fetchDocuments();
+                                                            } catch (err) {
+                                                                console.error('Delete error:', err);
+                                                                alert('Errore durante l\'eliminazione');
+                                                            }
+                                                        }
+                                                        setActiveMenu(null);
+                                                    }}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 'var(--spacing-sm)',
+                                                        padding: 'var(--spacing-sm) var(--spacing-md)',
+                                                        color: 'var(--color-error)',
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        width: '100%',
+                                                        cursor: 'pointer',
+                                                        textAlign: 'left'
+                                                    }}
+                                                >
+                                                    <Trash2 size={16} />
+                                                    Elimina
+                                                </button>
                                             </div>
                                         )}
                                     </td>
@@ -363,6 +466,18 @@ const DocumentList = () => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Rotation Modal */}
+            {rotationDoc && (
+                <RotationModal
+                    document={rotationDoc}
+                    onClose={() => setRotationDoc(null)}
+                    onConfirm={() => {
+                        setRotationDoc(null);
+                        fetchDocuments();
+                    }}
+                />
+            )}
         </div>
     );
 };

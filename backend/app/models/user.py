@@ -34,3 +34,4 @@ class User(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
     field_events = relationship("FieldEvent", back_populates="user")
+    chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")

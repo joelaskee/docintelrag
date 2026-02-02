@@ -44,10 +44,11 @@ services:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       SECRET_KEY: change-me-in-production-use-strong-key
       DEBUG: "true"
-      ALLOWED_UPLOAD_PATHS: '[]'
+      ALLOWED_UPLOAD_PATHS: '["/home/dgxadmin/Scaricati"]'
     volumes:
       - uploads_data:/app/uploads
       - ./testdata:/app/testdata:ro
+      - /home/dgxadmin/Scaricati:/home/dgxadmin/Scaricati:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -74,6 +75,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - ./testdata:/app/testdata:ro
+      - /home/dgxadmin/Scaricati:/home/dgxadmin/Scaricati:ro
     depends_on:
       postgres:
         condition: service_healthy

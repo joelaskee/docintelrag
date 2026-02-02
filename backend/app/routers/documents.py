@@ -221,3 +221,266 @@ async def get_document_pdf(
         }
     )
 
+
+@router.get("/{document_id}/pages/{page_num}/preview")
+async def get_page_preview(
+    document_id: UUID,
+    page_num: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get page preview image as base64 JPEG for rotation modal."""
+    from fastapi.responses import Response
+    from app.services.extraction import get_page_as_image
+    from app.models.document import DocumentPage
+    import io
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Get page rotation if exists
+    page = db.query(DocumentPage).filter(
+        DocumentPage.document_id == document_id,
+        DocumentPage.page_number == page_num
+    ).first()
+    
+    rotation = page.rotation_angle if page else 0
+    
+    # Render page as image
+    try:
+        image = get_page_as_image(doc.file_path, page_num, dpi=150)
+        if rotation:
+            image = image.rotate(-rotation, expand=True)  # Negative for clockwise
+        
+        # Convert to JPEG
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=85)
+        buffer.seek(0)
+        
+        return Response(
+            content=buffer.read(),
+            media_type="image/jpeg"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to render page: {str(e)}")
+
+
+@router.patch("/{document_id}/pages/{page_num}/rotation")
+async def set_page_rotation(
+    document_id: UUID,
+    page_num: int,
+    rotation: int = Query(..., description="Rotation angle: 0, 90, 180, or 270"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Set rotation angle for a page."""
+    from app.models.document import DocumentPage
+    
+    if rotation not in (0, 90, 180, 270):
+        raise HTTPException(status_code=400, detail="Rotation must be 0, 90, 180, or 270")
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Get or create page record
+    page = db.query(DocumentPage).filter(
+        DocumentPage.document_id == document_id,
+        DocumentPage.page_number == page_num
+    ).first()
+    
+    if page:
+        page.rotation_angle = rotation
+    else:
+        # Create page record if doesn't exist
+        page = DocumentPage(
+            document_id=document_id,
+            page_number=page_num,
+            rotation_angle=rotation
+        )
+        db.add(page)
+    
+    db.commit()
+    return {"message": f"Page {page_num} rotation set to {rotation}°", "rotation": rotation}
+
+
+@router.post("/{document_id}/confirm-rotation")
+async def confirm_rotation(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Confirm rotations and resume document processing."""
+    from app.workers.tasks import process_document_after_rotation
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    if doc.status != DocumentStatus.NEEDS_ROTATION.value:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Document status is '{doc.status}', not 'needs_rotation'"
+        )
+    
+    # Reset to processing and queue the task
+    doc.status = DocumentStatus.PROCESSING.value
+    db.commit()
+    
+    # Queue task for processing with rotations applied
+    process_document_after_rotation.delay(str(document_id))
+    
+    return {"message": f"Document {doc.filename} queued for processing with rotations applied"}
+
+
+@router.get("/{document_id}/page-count")
+async def get_page_count(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get total page count for a document."""
+    import fitz
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    try:
+        pdf = fitz.open(doc.file_path)
+        page_count = len(pdf)
+        pdf.close()
+        return {"page_count": page_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read PDF: {str(e)}")
+
+
+@router.delete("/{document_id}")
+async def delete_document(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a document and all related data."""
+    import os
+    from app.models.document import DocumentPage
+    
+    if current_user.role == UserRole.MANAGER:
+        raise HTTPException(status_code=403, detail="Managers cannot delete documents")
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    file_path = doc.file_path
+    filename = doc.filename
+    
+    # Delete related data
+    db.query(FieldEvent).filter(
+        FieldEvent.field_id.in_(
+            db.query(ExtractedField.id).filter(ExtractedField.document_id == document_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(ExtractedField).filter(ExtractedField.document_id == document_id).delete()
+    db.query(DocumentLine).filter(DocumentLine.document_id == document_id).delete()
+    db.query(DocumentPage).filter(DocumentPage.document_id == document_id).delete()
+    db.delete(doc)
+    db.commit()
+    
+    # Delete file from disk
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            pass  # File deletion is not critical
+    
+    return {"message": f"Document '{filename}' deleted successfully"}
+
+
+@router.post("/{document_id}/reprocess")
+async def reprocess_document(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reprocess a document (re-run OCR and extraction)."""
+    from app.models.document import DocumentPage
+    from app.workers.tasks import process_document
+    
+    if current_user.role == UserRole.MANAGER:
+        raise HTTPException(status_code=403, detail="Managers cannot reprocess documents")
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Clear previous extraction data
+    db.query(FieldEvent).filter(
+        FieldEvent.field_id.in_(
+            db.query(ExtractedField.id).filter(ExtractedField.document_id == document_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(ExtractedField).filter(ExtractedField.document_id == document_id).delete()
+    db.query(DocumentLine).filter(DocumentLine.document_id == document_id).delete()
+    db.query(DocumentPage).filter(DocumentPage.document_id == document_id).delete()
+    
+    # Reset document status
+    doc.status = DocumentStatus.QUEUED.value
+    doc.raw_text = None
+    doc.ocr_quality = None
+    doc.doc_type = None
+    doc.doc_type_confidence = None
+    doc.error_message = None
+    doc.warnings = []
+    
+    db.commit()
+    
+    # Queue for processing
+    process_document.delay(str(document_id))
+    
+    return {"message": f"Document '{doc.filename}' queued for reprocessing"}
+
+
+@router.post("/{document_id}/stop-processing")
+async def stop_processing(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Stop processing a document and mark it as failed."""
+    if current_user.role == UserRole.MANAGER:
+        raise HTTPException(status_code=403, detail="Managers cannot stop document processing")
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == current_user.tenant_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Set to failed with message
+    doc.status = DocumentStatus.FAILED.value
+    doc.error_message = "Processing stopped manually by user"
+    
+    db.commit()
+    
+    return {"message": f"Document '{doc.filename}' processing stopped"}

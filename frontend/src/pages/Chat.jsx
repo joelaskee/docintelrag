@@ -7,11 +7,35 @@ import './Chat.css'
 export default function Chat() {
     const [message, setMessage] = useState('')
     const [history, setHistory] = useState([])
+    const [sessionId, setSessionId] = useState(null)
     const messagesEndRef = useRef(null)
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
+
+    // Load initial session on mount
+    useEffect(() => {
+        const loadSession = async () => {
+            try {
+                const sessionsRes = await chatApi.getSessions()
+                if (sessionsRes.data && sessionsRes.data.length > 0) {
+                    const lastSession = sessionsRes.data[0]
+                    setSessionId(lastSession.id)
+
+                    try {
+                        const historyRes = await chatApi.getHistory(lastSession.id)
+                        setHistory(historyRes.data)
+                    } catch (e) {
+                        console.error("Failed to load history:", e)
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load sessions:", err)
+            }
+        }
+        loadSession()
+    }, [])
 
     useEffect(() => {
         scrollToBottom()
@@ -19,10 +43,15 @@ export default function Chat() {
 
     const sendMessage = useMutation({
         mutationFn: async (msg) => {
-            const response = await chatApi.send(msg, history)
+            const response = await chatApi.sendMessage(msg, sessionId)
             return response.data
         },
         onSuccess: (data, variables) => {
+            // Update session ID if it was a new session
+            if (!sessionId && data.session_id) {
+                setSessionId(data.session_id)
+            }
+
             setHistory(prev => [
                 ...prev,
                 { role: 'user', content: variables },
@@ -60,14 +89,14 @@ export default function Chat() {
                             <h3>Ciao! Come posso aiutarti?</h3>
                             <p>Puoi chiedermi informazioni sui documenti caricati.</p>
                             <div className="suggestions">
-                                <button onClick={() => setMessage("È arrivata tutta la merce dell'ordine?")}>
-                                    È arrivata tutta la merce dell'ordine?
+                                <button onClick={() => setMessage("Qual è la spesa totale?")}>
+                                    Qual è la spesa totale?
                                 </button>
-                                <button onClick={() => setMessage("Qual è il totale delle fatture di questo mese?")}>
-                                    Qual è il totale delle fatture di questo mese?
+                                <button onClick={() => setMessage("Chi sono i primi 3 fornitori?")}>
+                                    Chi sono i primi 3 fornitori?
                                 </button>
-                                <button onClick={() => setMessage("Quali DDT mancano per gli ordini aperti?")}>
-                                    Quali DDT mancano per gli ordini aperti?
+                                <button onClick={() => setMessage("Cerca l'ultima fattura di A2A")}>
+                                    Cerca l'ultima fattura di A2A
                                 </button>
                             </div>
                         </div>

@@ -68,13 +68,9 @@ def preprocess_image(image: Image.Image) -> Image.Image:
 
 def ocr_with_deepseek(image: Image.Image) -> str | None:
     """
-    Run OCR using DeepSeek-OCR via Ollama CLI (subprocess).
-    This mimics the user's successful 'ollama run' command.
+    Run OCR using DeepSeek-OCR via Ollama HTTP API.
+    Uses base64 encoded image sent to the /api/generate endpoint.
     """
-    import subprocess
-    import tempfile
-    import os
-
     try:
         # Resize image if too large to prevent timeouts
         # Limit max dimension to 2000px (sufficient for text)
@@ -86,52 +82,36 @@ def ocr_with_deepseek(image: Image.Image) -> str | None:
             image = image.resize(new_size, resample=Image.LANCZOS)
             logger.info(f"Resized image for DeepSeek to {new_size}")
 
-        # Save image to temp file
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            image.save(tmp, format="JPEG", quality=85)
-            tmp_path = tmp.name
+        # Convert image to base64
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG", quality=85)
+        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         
-        logger.info(f"Calling DeepSeek-OCR via CLI on {tmp_path}...")
+        logger.info(f"Calling DeepSeek-OCR via HTTP API...")
         
-        # Construct prompt compatible with 'ollama run' multimodality
-        # Syntax: ollama run model "path/to/image extract text"
-        # We need to set OLLAMA_HOST to point to the host machine
-        
-        env = os.environ.copy()
-        env["OLLAMA_HOST"] = "http://host.docker.internal:11434"
-        
-        prompt = f"{tmp_path}\nExtract the text in the image."
-        
-        # Run subprocess
-        result = subprocess.run(
-            ["ollama", "run", "deepseek-ocr:latest", prompt],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=600  # Keep high timeout just in case
-        )
-        
-        # Cleanup
-        try:
-            os.remove(tmp_path)
-        except:
-            pass
+        # Call Ollama API with image
+        with httpx.Client(timeout=300) as client:
+            response = client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={
+                    "model": "deepseek-ocr:latest",
+                    "prompt": "Extract all the text in this image. Return only the extracted text, nothing else.",
+                    "images": [img_base64],
+                    "stream": False
+                }
+            )
             
-        if result.returncode == 0:
-            text = result.stdout.strip()
-            # Remove potential verbose output from ollama if present (usually clean)
-            logger.info(f"DeepSeek-OCR CLI successful, extracted {len(text)} chars")
-            return text
-        else:
-            logger.error(f"DeepSeek-OCR CLI failed: {result.stderr}")
-            return None
+            if response.status_code == 200:
+                result = response.json()
+                text = result.get("response", "").strip()
+                logger.info(f"DeepSeek-OCR API successful, extracted {len(text)} chars")
+                return text
+            else:
+                logger.error(f"DeepSeek-OCR API failed: {response.status_code} - {response.text}")
+                return None
                 
     except Exception as e:
         logger.error(f"DeepSeek-OCR error: {e}")
-        try:
-            if 'tmp_path' in locals(): os.remove(tmp_path)
-        except:
-            pass
         return None
 
 
@@ -206,7 +186,21 @@ def ocr_page(file_path: Path, page_number: int, dpi: int = 400) -> OCRPageResult
                     words_with_bbox=[] # No bboxes from DeepSeek
                 )
             else:
-                logger.warning("DeepSeek returned empty or short text, falling back to Tesseract.")
+                # Try rotating image 180° (document might be upside-down)
+                logger.warning("DeepSeek returned empty, trying 180° rotation...")
+                rotated_image = image_for_deepseek.rotate(180)
+                deepseek_text_rotated = ocr_with_deepseek(rotated_image)
+                
+                if deepseek_text_rotated and len(deepseek_text_rotated) > 50:
+                    logger.info(f"Page {page_number} successfully OCR'd after 180° rotation")
+                    return OCRPageResult(
+                        page_number=page_number,
+                        text=deepseek_text_rotated,
+                        confidence=0.85,
+                        words_with_bbox=[]
+                    )
+                else:
+                    logger.warning("DeepSeek returned empty even after rotation, falling back to Tesseract.")
         
         # Determine final text from Tesseract
         words = []
@@ -282,6 +276,85 @@ def run_ocr(file_path: str | Path, pages_to_ocr: list[int] | None = None) -> OCR
             except Exception as e:
                 warnings.append(f"OCR error on page {page_num}: {str(e)}")
                 results.append(OCRPageResult(page_num, "", 0.0, []))
+    
+    valid_pages = [p for p in results if p.confidence > 0]
+    avg_conf = sum(p.confidence for p in valid_pages) / len(valid_pages) if valid_pages else 0.0
+    
+    return OCRResult(results, avg_conf, warnings, len(valid_pages) > 0)
+
+
+def run_ocr_with_rotations(file_path: str | Path, rotations: dict[int, int]) -> OCRResult:
+    """
+    Run OCR on a PDF document with user-specified rotations applied.
+    
+    Args:
+        file_path: Path to PDF file
+        rotations: Dict mapping page_number -> rotation_angle (0, 90, 180, 270)
+    """
+    file_path = Path(file_path)
+    warnings = []
+    
+    import fitz
+    try:
+        doc = fitz.open(file_path)
+        total_pages = len(doc)
+        doc.close()
+    except Exception as e:
+        logger.error(f"Could not open PDF for OCR with rotations: {e}")
+        return OCRResult([], 0.0, [f"Could not open PDF: {e}"], False)
+    
+    results: list[OCRPageResult] = []
+    
+    for page_num in range(1, total_pages + 1):
+        try:
+            rotation = rotations.get(page_num, 0)
+            
+            # Get page image with rotation applied
+            image = get_page_as_image(file_path, page_num, settings.ocr_dpi)
+            if rotation:
+                image = image.rotate(-rotation, expand=True)  # Negative for clockwise
+                logger.info(f"Applied {rotation}° rotation to page {page_num}")
+            
+            # Run OCR directly on the rotated image using DeepSeek
+            deepseek_text = ocr_with_deepseek(image)
+            
+            if deepseek_text and len(deepseek_text) > 50:
+                results.append(OCRPageResult(
+                    page_number=page_num,
+                    text=deepseek_text,
+                    confidence=0.9,
+                    words_with_bbox=[]
+                ))
+            else:
+                # Fallback to Tesseract on rotated image
+                logger.warning(f"DeepSeek returned empty for page {page_num}, using Tesseract")
+                processed = preprocess_image(image)
+                custom_config = r'--oem 1 --psm 3'
+                data = pytesseract.image_to_data(
+                    processed,
+                    lang='ita+eng',
+                    output_type=pytesseract.Output.DICT,
+                    config=custom_config
+                )
+                
+                texts = [t.strip() for t in data['text'] if t.strip()]
+                valid_confs = [int(c) for c in data['conf'] if int(c) >= 0]
+                avg_conf = sum(valid_confs) / len(valid_confs) if valid_confs else 0.0
+                
+                results.append(OCRPageResult(
+                    page_number=page_num,
+                    text=" ".join(texts),
+                    confidence=avg_conf / 100.0,
+                    words_with_bbox=[]
+                ))
+                
+                if avg_conf < 50:
+                    warnings.append(f"Low quality on page {page_num} even after rotation")
+                    
+        except Exception as e:
+            logger.error(f"OCR error on page {page_num}: {e}")
+            warnings.append(f"OCR error on page {page_num}: {str(e)}")
+            results.append(OCRPageResult(page_num, "", 0.0, []))
     
     valid_pages = [p for p in results if p.confidence > 0]
     avg_conf = sum(p.confidence for p in valid_pages) / len(valid_pages) if valid_pages else 0.0

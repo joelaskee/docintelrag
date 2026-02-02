@@ -27,6 +27,7 @@ export const documentsApi = {
     list: (params) => api.get('/documents', { params }),
     get: (id) => api.get(`/documents/${id}`),
     update: (id, data) => api.patch(`/documents/${id}`, data),
+    delete: (id) => api.delete(`/documents/${id}`),
     getFields: (id) => api.get(`/documents/${id}/fields`),
     getLines: (id) => api.get(`/documents/${id}/lines`),
     updateField: (docId, fieldId, data) => api.patch(`/documents/${docId}/fields/${fieldId}`, data),
@@ -34,6 +35,17 @@ export const documentsApi = {
         const token = localStorage.getItem('token');
         return `${API_URL}/documents/${id}/pdf?token=${encodeURIComponent(token || '')}`;
     },
+    // Rotation endpoints
+    getPageCount: (id) => api.get(`/documents/${id}/page-count`),
+    getPagePreviewUrl: (id, pageNum) => {
+        const token = localStorage.getItem('token');
+        return `${API_URL}/documents/${id}/pages/${pageNum}/preview`;
+    },
+    setPageRotation: (id, pageNum, rotation) =>
+        api.patch(`/documents/${id}/pages/${pageNum}/rotation`, null, { params: { rotation } }),
+    confirmRotation: (id) => api.post(`/documents/${id}/confirm-rotation`),
+    reprocess: (id) => api.post(`/documents/${id}/reprocess`),
+    stopProcessing: (id) => api.post(`/documents/${id}/stop-processing`),
 };
 
 export const ingestionApi = {
@@ -48,11 +60,22 @@ export const ingestionApi = {
             }
         }
     }),
-    folder: (path) => api.post('/ingestion/folder', null, { params: { folder_path: path } }),
+    folder: (path) => {
+        const formData = new FormData();
+        formData.append('folder_path', path);
+        return api.post('/ingestion/folder', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
 };
 
 export const chatApi = {
-    send: (message, history) => api.post('/chat', { message, history }),
+    // Send message with session ID
+    sendMessage: (message, sessionId) => api.post('/chat', { message, session_id: sessionId }),
+    // Get list of previous sessions
+    getSessions: () => api.get('/chat/sessions'),
+    // Get history of a specific session
+    getHistory: (sessionId) => api.get(`/chat/sessions/${sessionId}`),
 };
 
 export const dashboardApi = {
@@ -72,5 +95,6 @@ export const authApi = {
     login: (credentials) => api.post('/auth/login', credentials),
     me: () => api.get('/auth/me'),
 }
+
 
 export default api;

@@ -66,6 +66,31 @@ def process_document(self, document_id: str):
             doc.ocr_quality = ocr_result.avg_confidence
             doc.warnings = doc.warnings + ocr_result.warnings
             
+            # Check if OCR quality is too low - needs manual rotation
+            if ocr_result.avg_confidence < 0.5 or not ocr_result.success:
+                logger.warning(f"OCR quality too low ({ocr_result.avg_confidence:.2f}), needs manual rotation")
+                doc.status = DocumentStatus.NEEDS_ROTATION
+                doc.warnings = doc.warnings + ["OCR quality too low, manual rotation may be needed"]
+                
+                # Still save pages for preview
+                for ocr_page in ocr_result.pages:
+                    db_page = db.query(DocumentPage).filter(
+                        DocumentPage.document_id == doc.id,
+                        DocumentPage.page_number == ocr_page.page_number
+                    ).first()
+                    
+                    if db_page:
+                        db_page.ocr_confidence = ocr_page.confidence
+                
+                db.commit()
+                
+                return {
+                    "status": "needs_rotation",
+                    "document_id": str(doc.id),
+                    "ocr_quality": ocr_result.avg_confidence,
+                    "message": "Document requires manual rotation due to low OCR quality"
+                }
+            
             # Update page text with OCR results
             for ocr_page in ocr_result.pages:
                 db_page = db.query(DocumentPage).filter(
@@ -255,6 +280,150 @@ def generate_embeddings(document_id: str):
         db.commit()
         
         return {"status": "success", "lines_embedded": len(lines)}
+        
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, max_retries=2)
+def process_document_after_rotation(self, document_id: str):
+    """
+    Process document after manual rotation has been confirmed.
+    
+    This task runs OCR with the user-specified rotation angles applied,
+    then continues with classification and extraction.
+    """
+    from app.services.ocr import run_ocr_with_rotations
+    
+    db = SessionLocal()
+    doc = None
+    
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        
+        if not doc:
+            logger.error(f"Document {document_id} not found")
+            return {"status": "error", "message": "Document not found"}
+        
+        logger.info(f"Processing document after rotation: {doc.filename}")
+        
+        # Get saved rotations from pages
+        pages_with_rotation = db.query(DocumentPage).filter(
+            DocumentPage.document_id == doc.id
+        ).all()
+        
+        rotations = {p.page_number: p.rotation_angle for p in pages_with_rotation}
+        logger.info(f"Applying rotations: {rotations}")
+        
+        # Run OCR with rotations
+        ocr_result = run_ocr_with_rotations(doc.file_path, rotations)
+        
+        doc.ocr_quality = ocr_result.avg_confidence
+        doc.warnings = doc.warnings + ocr_result.warnings
+        
+        # Update page text with OCR results
+        for ocr_page in ocr_result.pages:
+            db_page = db.query(DocumentPage).filter(
+                DocumentPage.document_id == doc.id,
+                DocumentPage.page_number == ocr_page.page_number
+            ).first()
+            
+            if db_page:
+                db_page.text_content = ocr_page.text
+                db_page.ocr_confidence = ocr_page.confidence
+        
+        # Update raw_text with OCR
+        doc.raw_text = "\n\n".join(p.text for p in ocr_result.pages)
+        db.commit()
+        
+        # Classify document
+        import asyncio
+        classification = asyncio.get_event_loop().run_until_complete(
+            classify_document(doc.raw_text or "", filename=doc.filename)
+        )
+        
+        doc.doc_type = classification.doc_type
+        doc.doc_type_confidence = classification.confidence
+        db.commit()
+        
+        # Extract fields
+        page_texts = [p.text for p in ocr_result.pages]
+        doc_type_str = doc.doc_type if doc.doc_type else "unknown"
+        field_result = asyncio.get_event_loop().run_until_complete(
+            extract_fields(doc.raw_text or "", page_texts, doc_type=doc_type_str)
+        )
+        
+        # Clear old extracted fields and lines
+        db.query(ExtractedField).filter(ExtractedField.document_id == doc.id).delete()
+        db.query(DocumentLine).filter(DocumentLine.document_id == doc.id).delete()
+        
+        for field in field_result.fields:
+            db_field = ExtractedField(
+                document_id=doc.id,
+                field_name=field.field_name,
+                raw_value=field.raw_value,
+                normalized_value=field.normalized_value,
+                confidence=field.confidence,
+                page=field.page
+            )
+            db.add(db_field)
+            
+            # Update doc metadata for key fields
+            if field.field_name == "numero_documento":
+                doc.doc_number = field.normalized_value
+            elif field.field_name == "data_documento":
+                try:
+                    doc.doc_date = datetime.fromisoformat(field.normalized_value)
+                except (ValueError, TypeError):
+                    pass
+            elif field.field_name == "fornitore":
+                doc.fornitore = field.normalized_value
+            elif field.field_name == "emittente":
+                doc.emittente = field.normalized_value
+            elif field.field_name == "totale":
+                try:
+                    doc.totale = float(field.normalized_value)
+                except (ValueError, TypeError):
+                    pass
+        
+        for line in field_result.lines:
+            db_line = DocumentLine(
+                document_id=doc.id,
+                line_number=line["line_number"],
+                item_code=line.get("item_code"),
+                description=line.get("description"),
+                quantity=line.get("quantity"),
+                unit=line.get("unit"),
+                unit_price=line.get("unit_price"),
+                confidence=line.get("confidence", 0.5)
+            )
+            db.add(db_line)
+        
+        doc.warnings = doc.warnings + field_result.warnings
+        doc.status = DocumentStatus.EXTRACTED
+        doc.processed_at = datetime.utcnow()
+        
+        db.commit()
+        
+        logger.info(f"Successfully processed document after rotation: {doc.filename}")
+        
+        return {
+            "status": "success",
+            "document_id": str(doc.id),
+            "doc_type": doc.doc_type,
+            "fields_extracted": len(field_result.fields),
+            "lines_extracted": len(field_result.lines)
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error processing document after rotation {document_id}: {e}")
+        
+        if doc:
+            doc.status = DocumentStatus.FAILED
+            doc.error_message = str(e)
+            db.commit()
+        
+        raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
         
     finally:
         db.close()

@@ -198,16 +198,32 @@ Contenuto:
                 context += f"- {self._get_document_summary(doc)}\n"
             matched_docs = []
         
+        # Format history
+        history_text = ""
+        if history:
+            history_text = "CRONOLOGIA CHAT RECENTE:\n"
+            for msg in history[-5:]: # Last 5 messages
+                role = "User" if msg.get("role") == "user" else "Assistant"
+                content = msg.get("content", "").replace("\n", " ")
+                history_text += f"{role}: {content}\n"
+            history_text += "\n"
+        
+        from datetime import datetime
+        today_str = datetime.now().strftime('%d/%m/%Y')
+
         prompt = f"""Sei un assistente AI per l'analisi di documenti aziendali.
+OGGI è: {today_str}
 
 REGOLE FONDAMENTALI:
-1. Rispondi SOLO basandoti sui documenti forniti sotto
-2. Se un documento NON contiene l'informazione cercata, NON includerlo nella risposta
-3. Se non trovi l'informazione, dì chiaramente "Non ho trovato documenti che contengono..."
-4. NON inventare informazioni o connessioni tra documenti
-5. Cita SOLO i documenti che effettivamente contengono le informazioni richieste
+1. Rispondi SOLO basandoti sui documenti forniti sotto e sulla cronologia chat.
+2. Se un documento NON contiene l'informazione cercata, NON includerlo nella risposta.
+3. Se non trovi l'informazione, dì chiaramente "Non ho trovato documenti che contengono...".
+4. NON inventare informazioni o connessioni tra documenti.
+5. Cita SOLO i documenti che effettivamente contengono le informazioni richieste.
+6. Usa la cronologia per capire il contesto (es. "di chi parliamo" se l'utente dice "e le sue fatture?").
+7. Se l'utente chiede informazioni relative al tempo (es. "questo mese"), usa la data di oggi per orientarti.
 
-RISULTATI RICERCA:
+{history_text}RISULTATI RICERCA:
 {context}
 
 DOMANDA: {question}
